@@ -1,0 +1,94 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <math.h>
+#include "rebound.h"
+
+double ss_pos[11][3] = 
+{
+    {-3.546973000804067E-03  , 7.494892177326865E-03, 1.609330668093693E-05},  
+    {-3.537006086790117E-01 , 9.225912654347219E-02 , 3.998571975556650E-02},  
+    {5.280826466888512E-01 , -4.999840844468414E-01, -3.733460741217486E-02}, 
+    {3.497646002581582E-01,9.218945552750158E-01, -4.143015374064429E-05}, 
+    {-1.524401948658054E+00 , -5.477933224348285E-01, 2.592350232825299E-02}, 
+    {3.029962759519754E-01 , -5.229677310167575E+00 , 1.494253659304468E-02}, 
+    {3.650844544862753E+00,-9.349756764031834E+00, 1.722956954144017E-02}, 
+    {1.629362354946373E+01 , 1.128770904422834E+01, -1.691056198443549E-01}, 
+    {2.922302501905778E+01 , -6.459795225132490E+00,-5.405354350702295E-01},  
+    {1.288726232827778E+01 ,-3.138605434965960E+01,-3.690422756219131E-01},  
+    {-3.125708378623844E-01 ,-1.564106393693903E+00, 1.528307525642982E+00}, 
+
+};
+double ss_vel[11][3] = 
+{
+    {-8.420757492659053E-06 , -1.669232597728125E-06 ,2.317327254468307E-07 }, 
+    {-1.292864066772340E-02 ,-2.601903817732776E-02,-9.401163520339964E-04}, 
+    {1.377594528606968E-02 , 1.461213476109568E-02,-5.944718222531701E-04},
+    {-1.637145922641450E-02, 6.033714248941012E-03, 2.898851808434252E-07},
+    {5.254510445938901E-03 , -1.197253884479628E-02,-3.798048230670895E-04}, 
+    {7.450452816799473E-03,  7.929526662379520E-04,-1.699973889760523E-04}, 
+    {4.895944039985502E-03,  2.014703470360924E-03,-2.300847869519382E-04}, 
+    {-2.261666792434663E-03 , 3.050537781237610E-03, 4.050901101918338E-05}, 
+    {6.645775462541967E-04,  3.085279508313639E-03,-7.925367407411515E-05}, 
+    {2.993712741824289E-03 ,  5.346561418442296E-04,-9.214404821632689E-04}, 
+    {9.203178571392336E-03, -4.174480334780294E-03,-2.243115396908041E-03},
+};
+
+double ss_mass[11] =
+{
+    1.988544e30,
+    3.302e23,
+    48.685e23,
+    6.0477246e24,
+    6.4185e23,
+    1898.13e24,
+    5.68319e26,
+    86.8103e24,
+    102.41e24,
+    1.4639248e+22,
+    0.01
+};
+
+void heartbeat(struct reb_simulation* r);
+double e_init;
+double tmax;
+
+int main(int argc, char* argv[]){
+    struct reb_simulation* r = reb_create_simulation();
+    // Setup constants
+    r->dt             = 4;                // in days
+    tmax            = 7.3e10;            // 200 Myr
+    r->G            = 1.4880826e-34;        // in AU^3 / kg / day^2.
+    r->ri_whfast.safe_mode     = 0;        // Turn off safe mode. Need to call reb_integrator_synchronize() before outputs.
+    r->ri_whfast.corrector     = 11;        // 11th order symplectic corrector
+    r->integrator        = REB_INTEGRATOR_WHFAST;
+    r->heartbeat        = heartbeat;
+    r->exact_finish_time = 1; // Finish exactly at tmax in reb_integrate(). Default is already 1.
+    //r->integrator        = REB_INTEGRATOR_IAS15;        // Alternative non-symplectic integrator
+
+    // Initial conditions
+    for (int i=0;i<11;i++){
+        struct reb_particle p = {0};
+        p.x  = ss_pos[i][0];         p.y  = ss_pos[i][1];         p.z  = ss_pos[i][2];
+        p.vx = ss_vel[i][0];         p.vy = ss_vel[i][1];         p.vz = ss_vel[i][2];
+        p.m  = ss_mass[i];
+        reb_add(r, p);
+    }
+    reb_move_to_com(r);
+    e_init = reb_tools_energy(r);
+    system("rm -f energy.txt");
+     system("rm -v orbits.txt");        // delete previous output file
+    reb_integrate(r, tmax);
+}
+
+void heartbeat(struct reb_simulation* r){
+    if (reb_output_check(r, 10000.)){
+        reb_output_timing(r, tmax);
+        reb_integrator_synchronize(r);
+        FILE* f = fopen("energy.txt","a");
+        double e = reb_tools_energy(r);
+        fprintf(f,"%e %e\n",r->t, fabs((e-e_init)/e_init));
+        fclose(f);
+        reb_output_orbits(r, "orbits.txt");
+    }
+}
